@@ -62,10 +62,8 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
         
         if(finishReason !== "tool_calls") {
         console.log("\nAgent:" , message.content , "\n")
-        
-        messages.push({role : "user" , content : userMessage});
         messages.push({role : "assistant", content : message.content});
-        return message.slice(1);
+        return messages.slice(1);
         }
 
         messages.push(message);
