@@ -1,5 +1,11 @@
 import fs from "fs";
 import path from "path";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
+
+
 
 const WORKSPACE = path.resolve(process.env.WORKSPACE_DIR ?? "./workspace");
 
@@ -82,4 +88,14 @@ export function deleteFile(args : {path : string}) :string {
     }
 }
 
-
+async function bash(args : {command  : string}) : Promise<string> {
+    try {
+        ensureWorkspace();
+        const {stdout , stderr} = await execAsync(args.command, {cwd : WORKSPACE})
+        return [stdout ,stderr].filter(Boolean).join("\n stderr \n")
+    } catch (err : any) {
+        const out = err.stdout ?? "";
+        const error = err.stderr ?? err.message;
+        return `Error ${[out, error].filter(Boolean).join("\n")}`
+    }
+}  
