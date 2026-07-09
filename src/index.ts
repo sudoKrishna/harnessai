@@ -1,70 +1,125 @@
 import OpenAI from "openai";
 import readline from "readline";
-import { calculater, getCurrentTime } from "./tools";
+import { readFile, outlineFile, writeFile, updateFile, deleteFile, bash, web_fetch } from "./fileTools";
 
 const client = new OpenAI({
   apiKey: process.env.GROQ_API_KEY,
   baseURL: "https://api.groq.com/openai/v1",
 });
+
 export const toolRegistry: any = {
-  calculater:     calculater,
-  getCurrentTime: getCurrentTime,
+  readFile,
+  outlineFile,
+  writeFile,
+  updateFile,
+  deleteFile,
+  bash,
+  web_fetch,
 };
+
 export const toolDefinitions = [
   {
     type: "function" as const,
     function: {
-      name: "calculater",
-      description: "Do an arithmetic operation.",
+      name: "outlineFile",
+      description: "Get the structure of a file - shows line numbers of all functions, classes, and imports. Always call this before readFile on any file you haven't seen yet.",
       parameters: {
         type: "object",
         properties: {
-          a:         { type: "number", description: "First number"  },
-          b:         { type: "number", description: "Second number" },
-          operation: {
-            type: "string",
-            enum: ["add", "sub", "multiply", "division"],
-            description: "The arithmetic operation to perform",
-          },
+          path: { type: "string", description: "File path relative to the workspace" },
         },
-        required: ["a", "b", "operation"],
+        required: ["path"],
       },
     },
   },
   {
     type: "function" as const,
     function: {
-      name: "getCurrentTime",
-      description: "Get the current local time in HH:MM:SS format.",
+      name: "readFile",
+      description: "Read a specific line range from a file. Use outlineFile first to find the right line numbers, then read only the section you need.",
       parameters: {
         type: "object",
-        properties: {},
-        required: [],
+        properties: {
+          path:      { type: "string", description: "File path relative to the workspace" },
+          startLine: { type: "number", description: "First line to read (1-indexed)" },
+          endLine:   { type: "number", description: "Last line to read (inclusive)" },
+        },
+        required: ["path", "startLine", "endLine"],
       },
     },
   },
   {
-    name : "outlineFile",
-    decsription : "Get the structure of a file - shows line number of all function , classes , and imports . Always call this before readFile on any file you haven't seen yet.",
-    input_schema : {
-      type : "object",
-      properties : {
-        path : {type : "string", description : "File path relative to the workspace"}
+    type: "function" as const,
+    function: {
+      name: "writeFile",
+      description: "Write content to a file. Use this for new files or complete rewrites only. For small edits use updateFile instead.",
+      parameters: {
+        type: "object",
+        properties: {
+          path:    { type: "string", description: "File path relative to the workspace" },
+          content: { type: "string", description: "Full content to write to the file" },
+        },
+        required: ["path", "content"],
       },
-      required : ["path"]
-    }
+    },
   },
   {
-    name : "readFile",
-    decsription : "Read a specific line range from the file use outline file first to find the right line number , then read only the section you need.",
-    input_schema : {
-    type : "object",
-    properties : {
-      path : {type : "string"},
-      startLine : {type : "number" , decsription : "first line to read (1-index)"},
-      endLine : {type : "number" , decsription : "Last line to read (inclusive)"},
+    type: "function" as const,
+    function: {
+      name: "updateFile",
+      description: "Replace a specific line range in a file with new content. Always call readFile first to get the exact line numbers before updating.",
+      parameters: {
+        type: "object",
+        properties: {
+          path:        { type: "string", description: "File path relative to the workspace" },
+          start_line:  { type: "number", description: "First line to replace (1-indexed)" },
+          end_line:    { type: "number", description: "Last line to replace (inclusive)" },
+          new_content: { type: "string", description: "Replacement content for the line range" },
+        },
+        required: ["path", "start_line", "end_line", "new_content"],
+      },
     },
-    required : ["path" , "startLine" , "endLine"]
-    }
-  }
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "deleteFile",
+      description: "Delete a file or directory from the workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path relative to the workspace" },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "bash",
+      description: "Run a shell command in the workspace directory. Use this to run scripts, install packages, list files, or execute any terminal command.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "The shell command to execute" },
+        },
+        required: ["command"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "web_fetch",
+      description: "Fetch the content of a URL and return it as text. Use this to read documentation, APIs, or any web page.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "The URL to fetch" },
+        },
+        required: ["url"],
+      },
+    },
+  },
 ];
