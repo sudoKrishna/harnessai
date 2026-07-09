@@ -138,18 +138,41 @@ export function deleteFile(args : {path : string}) :string {
     }
 }
 
-async function bash(args : {command  : string}) : Promise<string> {
+export async function bash(args : {command  : string}) : Promise<string> {
     try {
         ensureWorkspace();
         const {stdout , stderr} = await execAsync(args.command, {cwd : WORKSPACE})
-        return [stdout ,stderr].filter(Boolean).join("\n stderr \n")
+        return [stdout ,stderr].filter(Boolean).join("\n[stderr]\n")
     } catch (err : any) {
         const out = err.stdout ?? "";
         const error = err.stderr ?? err.message;
-        return `Error ${[out, error].filter(Boolean).join("\n")}`
+        return `Error : ${[out, error].filter(Boolean).join("\n")}`
     }
 }  
-
-async function web_fetch(args : {}) {
-    
+ 
+export async function web_fetch(args : {url : string}) : Promise<string> {
+    try {
+        ensureWorkspace();
+        const response = await fetch(args.url)
+        if(!response.ok) {
+            return `Error  : HTTP ${response.status} ${response.statusText}`;
+        }
+        const text = await response.text();
+        if(text.length > CHAR_LIMIT) {
+            return text.slice(0 , CHAR_LIMIT) + `\n\n[truncated : content exceed the ${CHAR_LIMIT} charecters]`
+        }
+        return text;
+    } catch (err : any) {
+        return `Error : ${err.message}`
+    }
 }
+
+
+
+
+
+
+
+
+
+
