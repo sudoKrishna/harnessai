@@ -43,4 +43,28 @@ export const toolDefinitions = [
       },
     },
   },
+  {
+    name : "outlineFile",
+    decsription : "Get the structure of a file - shows line number of all function , classes , and imports . Always call this before readFile on any file you haven't seen yet.",
+    input_schema : {
+      type : "object",
+      properties : {
+        path : {type : "string", description : "File path relative to the workspace"}
+      },
+      required : ["path"]
+    }
+  },
+  {
+    name : "readFile",
+    decsription : "Read a specific line range from the file use outline file first to find the right line number , then read only the section you need.",
+    input_schema : {
+    type : "object",
+    properties : {
+      path : {type : "string"},
+      startLine : {type : "number" , decsription : "first line to read (1-index)"},
+      endLine : {type : "number" , decsription : "Last line to read (inclusive)"},
+    },
+    required : ["path" , "startLine" , "endLine"]
+    }
+  }
 ];
