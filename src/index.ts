@@ -1,11 +1,7 @@
 import OpenAI from "openai";
 import readline from "readline";
 import { readFile, outlineFile, writeFile, updateFile, deleteFile, bash, web_fetch } from "./fileTools";
-
-const client = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: "https://api.groq.com/openai/v1",
-});
+import { forget, recall, remember } from "./memory";
 
 export const toolRegistry: any = {
   readFile,
@@ -15,6 +11,9 @@ export const toolRegistry: any = {
   deleteFile,
   bash,
   web_fetch,
+  remember,
+  recall,
+  forget,
 };
 
 export const toolDefinitions = [
@@ -119,6 +118,49 @@ export const toolDefinitions = [
           url: { type: "string", description: "The URL to fetch" },
         },
         required: ["url"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "remember",
+      description: "Save a fact to memory so it persists between sessions.",
+      parameters: {
+        type: "object",
+        properties: {
+          key:   { type: "string", description: "A short label for the fact e.g. 'user_name'" },
+          value: { type: "string", description: "The value to store e.g. 'Aryan'" },
+        },
+        required: ["key", "value"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "recall",
+      description: "Look up a specific fact from memory by its key.",
+      parameters: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "The key to look up e.g. 'user_name'" },
+        },
+        required: ["key"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "forget",
+      description: "Delete a fact from memory by its key.",
+      parameters: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "The key to delete e.g. 'user_name'" },
+        },
+        required: ["key"],
       },
     },
   },
