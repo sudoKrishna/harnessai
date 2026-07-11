@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import readline from "readline";
+import fs from "fs";
+import path from "path"
 import { toolDefinitions,toolRegistry } from ".";
 import { getMemoryContext, recall } from "./memory";
 
@@ -29,7 +31,8 @@ const SYSTEM_PROMPT = `You are a coding assistant with access to the local works
 - Keep responses concise. Show what you changed and why.`;
 
 const TOKEN_LIMIT = 128_000;
-const TOKEN_WARNING = TOKEN_LIMIT * 0.8; 
+const TOKEN_WARNING = TOKEN_LIMIT * 0.8;
+const TOKEN_COMPACTION = TOKEN_LIMIT * 0.6;
  
 function estimateTokens(messages: OpenAI.Chat.ChatCompletionMessageParam[]): number {
     let totalChars = 0;
@@ -50,12 +53,74 @@ function estimateTokens(messages: OpenAI.Chat.ChatCompletionMessageParam[]): num
 }
 
 async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompletionMessageParam[]) {
-     
+
     const memoryContext = getMemoryContext();
     const systemPromptWithMemory = memoryContext 
-     ? `${SYSTEM_PROMPT}\n\n${memoryContext}` 
-     : SYSTEM_PROMPT; 
- 
+    ? `${SYSTEM_PROMPT}\n\n${memoryContext}`
+    : SYSTEM_PROMPT;
+
+     const agentContextDir = path.join("/tmp" , "agent-context");
+    fs.mkdirSync(agentContextDir , {recursive : true});
+
+    const archivePath = path.join(agentContextDir, "archive.json");
+    if(!fs.existsSync(archivePath)) {
+        fs.writeFileSync(archivePath , "[]", "utf-8")
+    }
+
+       let offloadCounter = 1;
+
+    async function offloadToDisk(toolResult : string, toolCallId : string , toolName: string ) : Promise<string> {
+        if(toolResult.length <= 2000) {
+            return toolResult
+        }
+
+        const fileName = `tool-result-${offloadCounter++}.txt`;
+        const filePath = path.join(agentContextDir, fileName)
+        fs.writeFileSync(filePath, toolResult, "utf-8");
+
+        const archive  = JSON.parse(fs.readFileSync(archivePath, "utf-8"))
+
+        archive.push({
+            tool_call_id : toolCallId,
+            tool_name : toolName,
+            original_result : toolResult,
+            timestamp : new Date().toISOString(),
+        })
+
+        fs.writeFileSync(
+            archivePath, 
+            JSON.stringify(archive, null , 2),
+            "utf-8"
+        )
+        console.log(`[offloaded ${toolName} result to ${filePath} (${toolResult.length} chars)]`)
+
+        return filePath
+    }
+    
+
+    async function compactToolMessages(messages : OpenAI.Chat.ChatCompletionMessageParam[]) {
+
+        for(const message of messages) {
+            if(message.role !== "tool") continue;
+            if(typeof message.content !== "string") continue;
+
+            if(
+               message.content.startsWith("/tmp/agent-context/") || 
+               message.content.startsWith("[Tool result offloaded]")
+            ) {
+                continue
+            }
+
+            if (message.content.length > 2000) {
+                const toolMsg = message as OpenAI.Chat.ChatCompletionToolMessageParam;
+                message.content = await offloadToDisk(
+                    message.content,
+                    toolMsg.tool_call_id,
+                    "unknown",  
+                );
+            }
+        }
+    }
 
     const messages : OpenAI.ChatCompletionMessageParam[] = [
         {
@@ -75,6 +140,17 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
     while(iteration < MAX_ITERATION) {
         iteration++;
         console.log(`\n[Round ${iteration}]`);
+
+        const tokenCount = estimateTokens(messages);
+        const pct = Math.floor((tokenCount / TOKEN_LIMIT) * 100);
+         console.log(`[Tokens: ${tokenCount.toLocaleString()} / ${TOKEN_LIMIT.toLocaleString()} (${pct}%)]`);
+
+        if (tokenCount >= TOKEN_WARNING) {
+        } else if (tokenCount >= TOKEN_COMPACTION) {
+            console.log("[Context > 50%] Compacting tool messages...");
+            await compactToolMessages(messages);
+        }
+
         let response : OpenAI.Chat.ChatCompletion;
         try {
             response = await client.chat.completions.create({
@@ -99,14 +175,7 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
         messages.push({role : "assistant", content : message.content});
 
 
-        const tokenCount = estimateTokens(messages);
-        const pct = Math.floor((tokenCount / TOKEN_LIMIT) * 100)
-        console.log(`[Token : ${tokenCount.toLocaleString()} / ${TOKEN_LIMIT.toLocaleString()} (${pct}%)]`)
-        if(tokenCount > TOKEN_WARNING){
-            console.log("approching the context limit")
-        }
 
-        
         return messages.slice(1);
         }
 
@@ -128,7 +197,11 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
             let result : string;
             try {
                   const raw = await fn ? fn(args) : `Error: "${tc.function.name}" tool was not found`;
-                  result = String(raw ?? "done");
+                  result = await offloadToDisk(
+                    String(raw ?? "done"),
+                    tc.id,
+                    tc.function.name,
+                  )
             } catch (err : any) {
                 result = "Error:" + err.message;
             }
