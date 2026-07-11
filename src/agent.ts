@@ -4,6 +4,14 @@ import fs from "fs";
 import path from "path"
 import { toolDefinitions,toolRegistry } from ".";
 import { getMemoryContext, recall } from "./memory";
+import z from "zod";
+
+const MAX_TOOL_RESULT = 10000
+
+const toolResultSchema = z.string().max(
+MAX_TOOL_RESULT,
+`tool result exceed ${MAX_TOOL_RESULT} chareceters`
+)
 
 const client  = new OpenAI({
     apiKey : process.env.GROQ_API_KEY,
@@ -28,7 +36,8 @@ const SYSTEM_PROMPT = `You are a coding assistant with access to the local works
 - Break complex tasks into steps: outline → read → edit → verify.
 - For simple math or general questions, answer directly without calling any tool.
 - If a file operation returns an error, report it and stop.
-- Keep responses concise. Show what you changed and why.`;
+- Keep responses concise. Show what you changed and why.
+- To run terminal commands, always use the bash tool.`;
 
 const TOKEN_LIMIT = 128_000;
 const TOKEN_WARNING = TOKEN_LIMIT * 0.8;
@@ -179,6 +188,8 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
         return messages.slice(1);
         }
 
+
+
         messages.push(message);
         const toolCalls = message.tool_calls;
         console.log(`Tools : ${toolCalls.length}`);
@@ -196,7 +207,7 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
             const fn = toolRegistry[tc.function.name];
             let result : string;
             try {
-                  const raw = await fn ? fn(args) : `Error: "${tc.function.name}" tool was not found`;
+                  const raw = fn ? await fn(args) : `Error: "${tc.function.name}" tool was not found`;
                   result = await offloadToDisk(
                     String(raw ?? "done"),
                     tc.id,
@@ -207,6 +218,14 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
             }
 
             console.log(`Result : ${result}`);
+            const validattion = toolResultSchema.safeParse(result);
+
+            if(!validattion.success) {
+                console.log("Tool result validation failed:" , validattion.error.issues)
+            } else {
+                result = validattion.data;
+            }
+
             messages.push({
                 role : "tool",
                 tool_call_id : tc.id,
