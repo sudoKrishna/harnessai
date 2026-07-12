@@ -130,6 +130,24 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
             }
         }
     }
+async function summarize(messages : any) {
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "user",
+        content: "Summarize:\n\n" + JSON.stringify(messages)
+      }
+    ]
+  });
+
+  const summary = response.choices[0]!.message.content;
+  messages.length = 0;
+  messages.push({
+    role: "assistant",
+    content: summary
+  });
+}
 
     const messages : OpenAI.ChatCompletionMessageParam[] = [
         {
