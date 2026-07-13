@@ -131,12 +131,28 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
         }
     }
 async function summarize(messages : any) {
+
+    const KEEP_LAST = 4;
+    // message it to small
+    if(messages.length < KEEP_LAST) {
+        return messages
+    }
+
+    // remove the old message
+    const oldMessages = messages.slice(0 , messages.length - KEEP_LAST)
+
+     // recent message save karna
+
+     const recentMessage = messages.slice(messages.length - KEEP_LAST)
+
+
+
   const response = await client.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
       {
         role: "user",
-        content: "Summarize:\n\n" + JSON.stringify(messages)
+        content: "Summarize:\n\n" + JSON.stringify(oldMessages)
       }
     ]
   });
@@ -147,6 +163,8 @@ async function summarize(messages : any) {
     role: "assistant",
     content: summary
   });
+
+  messages.push(...recentMessage)
 }
 
     const messages : OpenAI.ChatCompletionMessageParam[] = [
