@@ -130,41 +130,87 @@ async function runAgent(userMessage : string, history : OpenAI.Chat.ChatCompleti
             }
         }
     }
-async function summarize(messages : any) {
 
-    const KEEP_LAST = 4;
-    // message it to small
-    if(messages.length < KEEP_LAST) {
-        return messages
-    }
+async function summarizeContext(
+  messages: OpenAI.Chat.ChatCompletionMessageParam[]
+): Promise<void> {
+  const archive = JSON.parse(
+    fs.readFileSync(archivePath, "utf-8")
+  ) as Array<{
+    tool_call_id: string;
+    tool_name: string;
+    original_result: string;
+    timestamp: string;
+  }>;
 
-    // remove the old message
-    const oldMessages = messages.slice(0 , messages.length - KEEP_LAST)
+  if (archive.length === 0) return;
 
-     // recent message save karna
+  const toSummarize = archive.slice(0, -3);
+  if (toSummarize.length === 0) return;
 
-     const recentMessage = messages.slice(messages.length - KEEP_LAST)
+  const digest = toSummarize
+    .map(
+      (e) =>
+        `[${e.tool_name}]\n${e.original_result.slice(0, 1000)}`
+    )
+    .join("\n\n---\n\n");
 
-
-
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
+  const summaryResponse = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    max_tokens: 800,
     messages: [
       {
         role: "user",
-        content: "Summarize:\n\n" + JSON.stringify(oldMessages)
+        content: `Summarize the following tool results as a compact factual digest. Keep only information that would help an agent continue the current task. Be terse.
+
+${digest}`,
+      },
+    ],
+  });
+
+  const summary = summaryResponse.choices[0]?.message?.content ?? "";
+
+  const summarizedIds = new Set(
+    toSummarize.map((e) => e.tool_call_id)
+  );
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+
+    if (
+      msg.role === "tool" &&
+      summarizedIds.has((msg as any).tool_call_id)
+    ) {
+      messages.splice(i, 1);
+    }
+  }
+
+  // Also remove orphaned assistant tool_call messages
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as any;
+
+    if (msg.role === "assistant" && msg.tool_calls) {
+      const allSummarized = msg.tool_calls.every((tc: any) =>
+        summarizedIds.has(tc.id)
+      );
+
+      if (allSummarized) {
+        messages.splice(i, 1);
       }
-    ]
-  });
+    }
+  }
 
-  const summary = response.choices[0]!.message.content;
-  messages.length = 0;
-  messages.push({
+
+  messages.splice(1, 0, {
     role: "assistant",
-    content: summary
+    content: `[CONTEXT SUMMARY — generated at 80% token usage]
+
+${summary}`,
   });
 
-  messages.push(...recentMessage)
+  console.log(
+    `[Summarized ${toSummarize.length} tool results into context]`
+  );
 }
 
     const messages : OpenAI.ChatCompletionMessageParam[] = [
